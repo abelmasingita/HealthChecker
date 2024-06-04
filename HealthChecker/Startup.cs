@@ -7,13 +7,14 @@ using GraphQL.Server;
 using GraphQL.Server.Ui.Playground;
 using HealthChecker.GraphQL;
 using GraphQL.Types;
-using GraphQL.Server.Transports.AspNetCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
-using GraphQL.Server.Transports.AspNetCore.Common;
+using GraphQL.Server.Transports.AspNetCore;
 using System.Threading.Tasks;
 using System.Threading;
 using System;
+using GraphQL.Server.Transports.AspNetCore.Common;
+using GraphQL;
 
 namespace HealthChecker
 {
@@ -26,26 +27,24 @@ namespace HealthChecker
 
         public IConfiguration Configuration { get; }
 
-        // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddRazorPages();
 
-            services.AddSingleton<ServerType>();
+            services.AddHttpClient();
 
-            services.AddSingleton<HealthCheckerSchema, HealthCheckerSchema>();
+            services.AddSingleton<ServerType>();
+            services.AddSingleton<ServerErrorType>();
+            services.AddSingleton<HealthCheckerQuery>();
+            services.AddSingleton<ISchema, HealthCheckerSchema>(services => new HealthCheckerSchema(new FuncServiceProvider(services.GetRequiredService)));
 
             services.AddGraphQL(options =>
             {
                 options.EnableMetrics = true;
                 options.ExposeExceptions = true;
-                //var logger = provider.GetRequiredService<ILogger<Startup>>();
-                //options.UnhandledExceptionDelegate = ctx => logger.LogError("{Error} occured", ctx.OriginalException.Message);
-            }).AddSystemTextJson(deserializerSettings => { }, serializerSettings => { });
-
+            }).AddSystemTextJson();
         }
 
-        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             if (env.IsDevelopment())
@@ -55,22 +54,19 @@ namespace HealthChecker
             else
             {
                 app.UseExceptionHandler("/Error");
-                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
                 app.UseHsts();
             }
 
             app.UseHttpsRedirection();
             app.UseStaticFiles();
 
-            app.UseGraphQL<HealthCheckerSchema, GraphQLHttpMiddlewareWithLogs<HealthCheckerSchema>>("/graphql");
+            app.UseGraphQL<ISchema>();
             app.UseGraphQLPlayground(new GraphQLPlaygroundOptions
             {
                 Path = "/ui/playground"
             });
 
             app.UseRouting();
-
-            // app.UseAuthorization();
 
             app.UseEndpoints(endpoints =>
             {
@@ -111,7 +107,6 @@ namespace HealthChecker
 
         protected override CancellationToken GetCancellationToken(HttpContext context)
         {
-            // custom CancellationToken example 
             var cts = CancellationTokenSource.CreateLinkedTokenSource(base.GetCancellationToken(context), new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token);
             return cts.Token;
         }
